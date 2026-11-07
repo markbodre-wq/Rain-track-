@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0D2B3E">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="mobile-web-app-capable" content="yes">
@@ -131,6 +131,11 @@
   .sticky-col { position: sticky; right: 0; z-index: 1; background: var(--surface); box-shadow: -1px 0 0 var(--line); }
   thead .sticky-col { background: var(--field); }
 
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  input[type="file"].field::file-selector-button { margin-inline-end: .75rem; border: 0; border-radius: 10px; padding: .4rem .8rem; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; }
+  #viewerBody img { max-width: 100%; height: auto; margin: 0 auto; display: block; }
+  #viewerBody.full img { max-width: none; width: auto; margin: 0; }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
   }
@@ -150,9 +155,16 @@
     <p class="mt-1 text-sm text-muted">سجّل كمية المطر بالمليمتر، وتابع إجمالي كل شهر.</p>
   </header>
 
-  <div role="tablist" aria-label="الأقسام" class="grid grid-cols-2 gap-1 rounded-2xl border border-line bg-surface p-1">
+  <div id="installBar" class="hidden items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3">
+    <p id="installText" class="min-w-0 flex-1 text-sm">ثبّت التطبيق على شاشتك الرئيسية ليعمل كتطبيق مستقل.</p>
+    <button id="installBtn" type="button" class="btn btn-primary btn-sm">تثبيت</button>
+    <button id="installClose" type="button" class="h-10 w-10 shrink-0 rounded-xl text-muted" aria-label="إخفاء">×</button>
+  </div>
+
+  <div role="tablist" aria-label="الأقسام" class="grid grid-cols-3 gap-1 rounded-2xl border border-line bg-surface p-1">
     <button id="tabRain" type="button" role="tab" class="tab" data-tab="rain" aria-selected="true" aria-controls="viewRain">الأمطار</button>
     <button id="tabForecast" type="button" role="tab" class="tab" data-tab="forecast" aria-selected="false" aria-controls="viewForecast">التوقعات</button>
+    <button id="tabReports" type="button" role="tab" class="tab" data-tab="reports" aria-selected="false" aria-controls="viewReports">التقارير</button>
   </div>
 
 <div id="viewRain" role="tabpanel" aria-labelledby="tabRain" class="space-y-8">
@@ -326,9 +338,18 @@
 
   <!-- 3) ترتيب النماذج -->
   <section id="rankSection" aria-labelledby="rankTitle" class="hidden">
-    <h2 id="rankTitle" class="text-lg font-semibold">أي النماذج الأقرب للواقع؟</h2>
+    <div class="flex items-center justify-between gap-3">
+      <h2 id="rankTitle" class="text-lg font-semibold">تقرير دقة النماذج</h2>
+      <select id="rankPeriod" class="field" style="width:auto;max-width:55%;min-height:2.5rem;padding:.4rem 2rem .4rem .8rem" aria-label="الفترة"></select>
+    </div>
     <p id="rankNote" class="mt-1 text-sm text-muted"></p>
+    <p id="rankVerdict" class="mt-3 hidden rounded-2xl bg-field px-4 py-3 text-sm font-medium"></p>
     <ol id="rankList" class="mt-3 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface"></ol>
+    <details class="mt-3">
+      <summary class="cursor-pointer text-sm text-muted">كيف تُحسب الدقة؟</summary>
+      <p class="mt-2 text-sm text-muted">دقة الكمية = 100% ناقص (مجموع أخطاء النموذج ÷ مجموع المطر الفعلي)، وحدّها الأدنى 0%. دقة الرصد = نسبة الأيام التي أصاب فيها النموذج في تحديد اليوم الماطر (1 مم فأكثر) أو الجاف. متوسط الخطأ هو متوسط الفرق المطلق بالمليمتر. كل نموذج يُحسب على الأيام التي أدخلت له فيها قيمة فقط.</p>
+    </details>
+    <button id="goAttach" type="button" class="btn btn-ghost mt-3">أرفق جدول مقارنة نهائي لهذه الفترة</button>
   </section>
 
   <!-- 4) الأرشيف -->
@@ -351,10 +372,76 @@
 
 </div><!-- /viewForecast -->
 
+<div id="viewReports" role="tabpanel" aria-labelledby="tabReports" class="hidden space-y-8">
+
+  <section aria-labelledby="rpFormTitle" class="rounded-3xl border border-line bg-surface p-5">
+    <h2 id="rpFormTitle" class="text-lg font-semibold">رفع تقرير</h2>
+    <p class="mt-1 text-sm text-muted">صور أو ملفات PDF لتقارير الحصيلة الشهرية والسنوية أو جداول مقارنة النماذج. تُحفظ داخل هاتفك وتبقى متاحة بدون إنترنت.</p>
+    <p id="rpWarn" class="mt-3 hidden rounded-2xl bg-warnbg px-4 py-3 text-sm text-warnink" role="alert">تخزين الملفات غير متاح في هذا المتصفح (ربما بسبب وضع التصفح الخاص)، فلن تُحفظ التقارير.</p>
+
+    <form id="rpForm" class="mt-4 space-y-4" novalidate>
+      <div>
+        <label for="rpType" class="mb-1.5 block text-sm font-medium">نوع التقرير</label>
+        <select id="rpType" class="field">
+          <option value="monthly">حصيلة شهرية</option>
+          <option value="yearly">حصيلة سنوية</option>
+          <option value="compare">مقارنة النماذج (نهاية شهر أو موسم)</option>
+          <option value="other">أخرى</option>
+        </select>
+      </div>
+
+      <div id="rpMonthWrap">
+        <label for="rpMonth" class="mb-1.5 block text-sm font-medium">الشهر</label>
+        <input id="rpMonth" type="month" class="field">
+      </div>
+      <div id="rpYearWrap" class="hidden">
+        <label for="rpYear" class="mb-1.5 block text-sm font-medium">السنة</label>
+        <input id="rpYear" type="number" inputmode="numeric" min="2000" max="2100" class="field" placeholder="مثال: 2026">
+      </div>
+      <div id="rpTextWrap" class="hidden">
+        <label for="rpText" class="mb-1.5 block text-sm font-medium">الفترة (اختياري)</label>
+        <input id="rpText" type="text" maxlength="40" autocomplete="off" class="field" placeholder="مثال: نهاية أكتوبر 2026، أو موسم الخريف">
+      </div>
+
+      <div>
+        <label for="rpTitle" class="mb-1.5 block text-sm font-medium">العنوان (اختياري)</label>
+        <input id="rpTitle" type="text" maxlength="80" autocomplete="off" class="field" placeholder="إن تركته فارغًا يُستعمل اسم الملف">
+      </div>
+
+      <div>
+        <label for="rpFile" class="mb-1.5 block text-sm font-medium">الصور أو ملفات PDF</label>
+        <input id="rpFile" type="file" accept="image/*,application/pdf,.pdf" multiple class="field">
+        <p class="mt-1.5 text-xs text-muted">تُضغط الصور تلقائيًا مع بقاء النص مقروءًا. الحد الأقصى 25 MB للملف الواحد.</p>
+      </div>
+
+      <p id="rpErr" class="hidden text-sm text-danger" role="alert"></p>
+      <button id="rpSubmit" type="submit" class="btn btn-primary">حفظ التقرير</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="rpListTitle">
+    <div class="flex items-baseline justify-between gap-3">
+      <h2 id="rpListTitle" class="text-lg font-semibold">التقارير المحفوظة</h2>
+      <span id="rpCount" class="text-sm text-muted"></span>
+    </div>
+    <div class="mt-3 flex flex-wrap gap-2" role="group" aria-label="تصفية حسب النوع">
+      <button type="button" class="chip" data-filter="all" aria-pressed="true">الكل</button>
+      <button type="button" class="chip" data-filter="monthly" aria-pressed="false">شهرية</button>
+      <button type="button" class="chip" data-filter="yearly" aria-pressed="false">سنوية</button>
+      <button type="button" class="chip" data-filter="compare" aria-pressed="false">مقارنة النماذج</button>
+      <button type="button" class="chip" data-filter="other" aria-pressed="false">أخرى</button>
+    </div>
+    <ul id="rpList" class="mt-3 divide-y divide-line"></ul>
+    <p id="rpEmpty" class="mt-4 hidden text-sm text-muted"></p>
+    <p class="mt-4 text-xs text-muted">ملفات PDF تُفتح في عارض الهاتف. مسح بيانات المتصفح يحذف التقارير، فاحتفظ بنسخة مما يهمك عبر زر "تنزيل".</p>
+  </section>
+
+</div><!-- /viewReports -->
+
   <!-- النسخ الاحتياطي -->
   <section aria-labelledby="bkTitle" class="rounded-3xl border border-line p-5">
     <h2 id="bkTitle" class="text-lg font-semibold">النسخ الاحتياطي</h2>
-    <p class="mt-1 text-sm text-muted">بياناتك محفوظة داخل متصفح هذا الهاتف فقط. صدّر نسخة (تشمل السجلات والتوقعات) بين فترة وأخرى لتستعيدها إن مسحت بيانات المتصفح أو انتقلت إلى هاتف آخر.</p>
+    <p class="mt-1 text-sm text-muted">بياناتك محفوظة داخل متصفح هذا الهاتف فقط. صدّر نسخة (تشمل السجلات والتوقعات) بين فترة وأخرى لتستعيدها إن مسحت بيانات المتصفح أو انتقلت إلى هاتف آخر. التقارير المرفوعة (الصور وPDF) لا تدخل في هذه النسخة لكبر حجمها، ولكل تقرير زر تنزيل في تبويب التقارير.</p>
     <p id="lastExport" class="mt-2 text-sm"></p>
     <div class="mt-4 grid grid-cols-2 gap-3">
       <button id="exportBtn" type="button" class="btn btn-primary">تصدير نسخة</button>
@@ -373,6 +460,17 @@
     <p id="modalMsg" class="mt-2 text-sm text-muted"></p>
     <div id="modalActions" class="mt-5 flex flex-col gap-2"></div>
   </div>
+</div>
+
+<!-- عارض الصور -->
+<div id="viewer" class="fixed inset-0 z-[55] hidden flex-col bg-black/90" role="dialog" aria-modal="true" aria-labelledby="viewerTitle">
+  <div class="flex items-center gap-2 px-3 py-2 text-white">
+    <button id="viewerClose" type="button" class="h-11 rounded-xl bg-white/15 px-4 text-sm font-semibold">إغلاق</button>
+    <h3 id="viewerTitle" class="min-w-0 flex-1 truncate text-sm"></h3>
+    <button id="viewerZoom" type="button" class="h-11 rounded-xl bg-white/15 px-3 text-sm">الحجم الكامل</button>
+    <button id="viewerDl" type="button" class="h-11 rounded-xl bg-white/15 px-3 text-sm">تنزيل</button>
+  </div>
+  <div id="viewerBody" class="flex-1 overflow-auto p-2"><img id="viewerImg" alt=""></div>
 </div>
 
 <!-- إشعار قصير -->
@@ -1117,34 +1215,47 @@
     return out;
   }
 
-  function modelStats() {
+  const RAIN_MM = 1; // اليوم الماطر: 1 مم فأكثر
+
+  function modelStats(prefix) {
     const acc = new Map();
     let evaluated = 0;
     const slot = (key, isMean) => {
-      if (!acc.has(key)) acc.set(key, { name: key, sum: 0, n: 0, wins: 0, pSum: 0, pN: 0, isMean });
+      if (!acc.has(key)) acc.set(key, { name: key, isMean, sum: 0, act: 0, n: 0, wins: 0, rdOk: 0 });
       return acc.get(key);
     };
     forecasts.forEach(f => {
+      if (prefix && prefix !== 'all' && !f.date.startsWith(prefix)) return;
       const ev = evaluate(f);
       if (ev.actual === null) return;
       evaluated++;
-      ev.entries.forEach(([n]) => {
+      const actRain = ev.actual >= RAIN_MM;
+      ev.entries.forEach(([n, v]) => {
         const a = slot(n, false);
         a.sum += ev.errors[n];
+        a.act += ev.actual;
         a.n++;
-        if (ev.pcts[n] !== null) { a.pSum += ev.pcts[n]; a.pN++; }
+        if ((v >= RAIN_MM) === actRain) a.rdOk++;
         if (!ev.tie && ev.entries.length > 1 && ev.winners.includes(n)) a.wins++;
       });
       if (ev.entries.length > 1) {
         const a = slot(MEAN_KEY, true);
         a.sum += ev.meanErr;
+        a.act += ev.actual;
         a.n++;
-        if (ev.meanPct !== null) { a.pSum += ev.meanPct; a.pN++; }
+        if ((ev.mean >= RAIN_MM) === actRain) a.rdOk++;
       }
     });
     const rows = [...acc.values()]
-      .map(a => ({ ...a, mae: a.sum / a.n }))
-      .sort((x, y) => (x.mae - y.mae) || (y.wins - x.wins));
+      .map(a => ({
+        ...a,
+        mae: a.sum / a.n,
+        accQ: a.act > 0 ? Math.max(0, Math.round((1 - a.sum / a.act) * 100)) : null,
+        accR: Math.round(a.rdOk / a.n * 100)
+      }))
+      .sort((x, y) =>
+        ((y.accQ === null ? -1 : y.accQ) - (x.accQ === null ? -1 : x.accQ)) ||
+        (y.accR - x.accR) || (x.mae - y.mae));
     return { rows, evaluated };
   }
 
@@ -1297,35 +1408,78 @@
 
   function signed(n) { return n > 0 ? '+' + fmt(n) : n < 0 ? '−' + fmt(Math.abs(n)) : '0'; }
 
+  function periodOptions() {
+    const opts = [['all', 'كل الفترة']];
+    const years = new Set(), months = new Set();
+    forecasts.forEach(f => { years.add(f.date.slice(0, 4)); months.add(f.date.slice(0, 7)); });
+    [...months].sort().reverse().forEach(m => opts.push([m, `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`]));
+    [...years].sort().reverse().forEach(y => opts.push([y, `سنة ${y}`]));
+    return opts;
+  }
+
   function renderRanking() {
-    const { rows, evaluated } = modelStats();
-    $('rankSection').classList.toggle('hidden', evaluated === 0);
-    if (!evaluated) return;
+    const overall = modelStats('all');
+    $('rankSection').classList.toggle('hidden', overall.evaluated === 0);
+    if (!overall.evaluated) return;
 
-    $('rankNote').textContent =
-      `بناءً على ${dayN(evaluated)} سُجّل لها المقاس الفعلي. الترتيب بمتوسط الخطأ بالمليمتر: كلما قلّ كان النموذج أقرب للواقع.` +
-      (evaluated < 5 ? ' النتائج أولية، وتزداد دقتها مع المزيد من الأيام.' : '');
+    const sel = $('rankPeriod');
+    const prev = sel.value || 'all';
+    const opts = periodOptions();
+    sel.replaceChildren();
+    opts.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; sel.append(o); });
+    sel.value = opts.some(o => o[0] === prev) ? prev : 'all';
 
+    const { rows, evaluated } = modelStats(sel.value);
     const ol = $('rankList');
+    const verdict = $('rankVerdict');
     ol.replaceChildren();
+    verdict.classList.add('hidden');
+
+    if (!evaluated) { $('rankNote').textContent = 'لا توجد أيام مقيَّمة في هذه الفترة بعد.'; return; }
+
+    const anyRain = rows.some(r => r.accQ !== null);
+    $('rankNote').textContent =
+      `بناءً على ${dayN(evaluated)} سُجّل لها المقاس الفعلي.` +
+      (evaluated < 5 ? ' النتائج أولية، وتزداد دقتها مع المزيد من الأيام.' : '') +
+      (anyRain ? '' : ' لم يُسجَّل مطر في هذه الفترة، لذلك تُحسب دقة الرصد فقط.');
+
+    const models = rows.filter(r => !r.isMean);
+    if (models.length) {
+      const best = models[0];
+      let t = `الأدق في هذه الفترة: ${best.name}` + (best.accQ !== null ? ` بدقة كمية ${best.accQ}%` : '') + ` ودقة رصد ${best.accR}%.`;
+      const meanRow = rows.find(r => r.isMean);
+      if (meanRow && rows.indexOf(meanRow) < rows.indexOf(best)) t += ' ومتوسط النماذج تفوّق على أي نموذج منفرد.';
+      verdict.textContent = t;
+      verdict.classList.remove('hidden');
+    }
+
     rows.forEach((r, i) => {
-      const li = el('li', 'flex items-center gap-3 px-4 py-3' + (r.isMean ? ' bg-field' : ''));
-      li.append(el('span', 'w-6 shrink-0 text-center font-semibold tabular-nums text-muted', String(i + 1)));
+      const li = el('li', 'px-4 py-3' + (r.isMean ? ' bg-field' : ''));
+      const top = el('div', 'flex items-center gap-3');
+      top.append(el('span', 'w-6 shrink-0 text-center font-semibold tabular-nums text-muted', String(i + 1)));
+      const nameWrap = el('div', 'flex min-w-0 flex-1 flex-wrap items-center gap-2');
+      nameWrap.append(el('span', 'font-medium break-words', r.isMean ? MEAN_LABEL : r.name));
+      if (i === 0 && rows.length > 1) nameWrap.append(el('span', 'badge', 'الأدق'));
+      top.append(nameWrap);
+      const big = el('div', 'shrink-0 text-center');
+      big.append(el('div', 'text-lg font-bold leading-tight tabular-nums', r.accQ === null ? '—' : r.accQ + '%'), el('div', 'text-xs text-muted', 'دقة الكمية'));
+      top.append(big);
+      li.append(top);
 
-      const mid = el('div', 'min-w-0 flex-1');
-      const nameRow = el('div', 'flex flex-wrap items-center gap-2');
-      nameRow.append(el('span', 'font-medium break-words', r.isMean ? MEAN_LABEL : r.name));
-      if (i === 0 && rows.length > 1 && rows[0].mae < rows[1].mae) nameRow.append(el('span', 'badge', 'الأقرب للواقع'));
-      mid.append(nameRow);
-      const pctTxt = r.pN ? `، متوسط نسبة الخطأ ${Math.round(r.pSum / r.pN)}%` : '';
-      mid.append(el('div', 'mt-0.5 text-xs text-muted',
-        (r.isMean ? `محسوب على ${dayN(r.n)}` : `الأقرب في ${r.wins} من ${dayN(r.n)}`) + pctTxt));
-      li.append(mid);
+      const track = el('div', 'mt-2 h-1.5 overflow-hidden rounded-full bg-line');
+      const fill = el('div', 'h-full rounded-full bg-accent');
+      fill.style.width = (r.accQ === null ? 0 : r.accQ) + '%';
+      track.append(fill);
+      li.append(track);
 
-      li.append(el('div', 'shrink-0 text-sm tabular-nums', `خطأ ${fmt(r.mae)} مم`));
+      const bits = [`دقة الرصد ${r.accR}%`, `متوسط الخطأ ${fmt(r.mae)} مم`];
+      bits.push(r.isMean ? `على ${dayN(r.n)}` : `الأقرب في ${r.wins} من ${dayN(r.n)}`);
+      li.append(el('p', 'mt-1.5 text-xs text-muted', bits.join('، ')));
       ol.append(li);
     });
   }
+
+  $('rankPeriod').addEventListener('change', renderRanking);
 
   function valueCell(value, diff, pct, win) {
     const td = el('td', 'px-3 py-2.5 align-top whitespace-nowrap' + (win ? ' bg-field' : ''));
@@ -1524,14 +1678,404 @@
   });
 
   /* ---------- التبويبات ---------- */
+  const VIEWS = { rain: 'viewRain', forecast: 'viewForecast', reports: 'viewReports' };
   function setTab(t) {
-    $('viewRain').classList.toggle('hidden', t !== 'rain');
-    $('viewForecast').classList.toggle('hidden', t !== 'forecast');
+    Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle('hidden', k !== t));
     document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
     if (t === 'rain' && chart) chart.resize();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+  /* =====================================================
+     التقارير: رفع الصور وملفات PDF وحفظها محليًا (IndexedDB)
+     ===================================================== */
+  const DB_NAME = 'rain-log-db';
+  const STORE = 'reports';
+  const MAX_FILE = 25 * 1024 * 1024;
+  const TYPE_LABEL = { monthly: 'حصيلة شهرية', yearly: 'حصيلة سنوية', compare: 'مقارنة النماذج', other: 'أخرى' };
+  const ICON_PDF = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>';
+  const ICON_IMG = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg>';
+
+  let reports = [];
+  let rpFilter = 'all';
+  let dbp = null;
+  let thumbUrls = [];
+
+  function openDB() {
+    if (dbp) return dbp;
+    dbp = new Promise((resolve, reject) => {
+      if (!window.indexedDB) { reject(new Error('no-idb')); return; }
+      const rq = indexedDB.open(DB_NAME, 1);
+      rq.onupgradeneeded = () => {
+        if (!rq.result.objectStoreNames.contains(STORE)) rq.result.createObjectStore(STORE, { keyPath: 'id' });
+      };
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    });
+    return dbp;
+  }
+
+  function dbTx(mode, fn) {
+    return openDB().then(db => new Promise((resolve, reject) => {
+      const t = db.transaction(STORE, mode);
+      let out;
+      const r = fn(t.objectStore(STORE));
+      if (r) r.onsuccess = () => { out = r.result; };
+      t.oncomplete = () => resolve(out);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error || new Error('abort'));
+    }));
+  }
+
+  const fmtSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+  const tsISO = ts => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  function fileWord(n) {
+    if (n === 1) return 'ملف واحد';
+    if (n === 2) return 'ملفان';
+    if (n <= 10) return `${n} ملفات`;
+    return `${n} ملفًا`;
+  }
+
+  function periodLabel(r) {
+    if (r.type === 'monthly' && /^\d{4}-\d{2}$/.test(r.period)) return `${MONTHS[+r.period.slice(5, 7) - 1]} ${r.period.slice(0, 4)}`;
+    if (r.type === 'yearly' && r.period) return `سنة ${r.period}`;
+    return r.period || '';
+  }
+
+  function setRpErr(msg) {
+    const p = $('rpErr');
+    p.textContent = msg || '';
+    p.classList.toggle('hidden', !msg);
+  }
+
+  function syncPeriodFields() {
+    const t = $('rpType').value;
+    $('rpMonthWrap').classList.toggle('hidden', t !== 'monthly');
+    $('rpYearWrap').classList.toggle('hidden', t !== 'yearly');
+    $('rpTextWrap').classList.toggle('hidden', t === 'monthly' || t === 'yearly');
+  }
+
+  function readPeriod(type) {
+    if (type === 'monthly') { const v = $('rpMonth').value; return /^\d{4}-\d{2}$/.test(v) ? v : ''; }
+    if (type === 'yearly') { const v = parseInt($('rpYear').value, 10); return (v >= 2000 && v <= 2100) ? String(v) : ''; }
+    return $('rpText').value.trim().slice(0, 40);
+  }
+
+  /* ---------- معالجة الصور ---------- */
+  function loadImage(blob) {
+    return new Promise((resolve, reject) => {
+      const u = URL.createObjectURL(blob);
+      const im = new Image();
+      im.onload = () => { URL.revokeObjectURL(u); resolve(im); };
+      im.onerror = () => { URL.revokeObjectURL(u); reject(new Error('img')); };
+      im.src = u;
+    });
+  }
+  const canvasBlob = (c, type, q) => new Promise(r => c.toBlob(r, type, q));
+
+  async function prepImage(file) {
+    let im;
+    try { im = await loadImage(file); } catch (e) { return { blob: file, thumb: null }; }
+    const w = im.naturalWidth, h = im.naturalHeight;
+    if (!w || !h) return { blob: file, thumb: null };
+
+    const draw = maxSide => {
+      const sc = Math.min(1, maxSide / Math.max(w, h));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w * sc));
+      c.height = Math.max(1, Math.round(h * sc));
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(im, 0, 0, c.width, c.height);
+      return { c, sc };
+    };
+
+    let blob = file;
+    if (Math.max(w, h) > 2000 || file.size > 700 * 1024) {
+      const { c, sc } = draw(2000);
+      const out = await canvasBlob(c, 'image/jpeg', 0.85);
+      if (out && (sc < 1 || out.size < file.size)) blob = out;
+    }
+    const t = draw(240);
+    const thumb = await canvasBlob(t.c, 'image/jpeg', 0.7);
+    return { blob, thumb };
+  }
+
+  async function addReports(files, type, period, title) {
+    const list = [...files];
+    let saved = 0;
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      const isImg = (f.type || '').startsWith('image/');
+      if (!isPdf && !isImg) { toast(`تخطّي ${f.name}: النوع غير مدعوم`); continue; }
+      if (f.size > MAX_FILE) { toast(`تخطّي ${f.name}: أكبر من 25 MB`); continue; }
+
+      let blob = f, thumb = null, mime = isPdf ? 'application/pdf' : f.type, name = f.name;
+      if (isPdf) {
+        if (blob.type !== 'application/pdf') blob = new Blob([f], { type: 'application/pdf' });
+      } else {
+        const r = await prepImage(f);
+        blob = r.blob;
+        thumb = r.thumb;
+        if (blob !== f) { mime = 'image/jpeg'; name = name.replace(/\.[^.]+$/, '') + '.jpg'; }
+      }
+      const base = f.name.replace(/\.[^.]+$/, '');
+      const t = title ? (list.length > 1 ? `${title} (${i + 1})` : title) : base;
+      const rec = {
+        id: uid(), kind: isPdf ? 'pdf' : 'image', type, period,
+        title: t.slice(0, 80), name, mime, size: blob.size, created: Date.now(), blob, thumb
+      };
+      await dbTx('readwrite', st => st.put(rec));
+      reports.push(rec);
+      saved++;
+    }
+    return saved;
+  }
+
+  /* ---------- العرض ---------- */
+  function renderReports() {
+    thumbUrls.forEach(u => URL.revokeObjectURL(u));
+    thumbUrls = [];
+    const list = $('rpList');
+    list.replaceChildren();
+
+    const total = reports.reduce((s, r) => s + r.size, 0);
+    $('rpCount').textContent = reports.length ? `${fileWord(reports.length)}، ${fmtSize(total)}` : '';
+    document.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === rpFilter)));
+
+    const shown = reports.filter(r => rpFilter === 'all' || r.type === rpFilter).sort((a, b) => b.created - a.created);
+    const empty = $('rpEmpty');
+    empty.classList.toggle('hidden', shown.length > 0);
+    empty.textContent = reports.length ? 'لا توجد تقارير من هذا النوع.' : 'لا توجد تقارير بعد. ارفع أول صورة أو ملف PDF من النموذج أعلاه.';
+
+    shown.forEach(r => {
+      const li = el('li', 'flex gap-3 py-3');
+
+      const th = el('div', 'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-field text-muted');
+      if (r.thumb) {
+        const u = URL.createObjectURL(r.thumb);
+        thumbUrls.push(u);
+        const im = el('img', 'h-full w-full object-cover');
+        im.src = u;
+        im.alt = '';
+        th.append(im);
+      } else {
+        th.innerHTML = r.kind === 'pdf' ? ICON_PDF : ICON_IMG;
+      }
+
+      const info = el('div', 'min-w-0 flex-1');
+      info.append(el('div', 'font-medium break-words', r.title));
+      const meta = el('div', 'mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted');
+      meta.append(el('span', 'badge', TYPE_LABEL[r.type] || 'أخرى'));
+      const pl = periodLabel(r);
+      if (pl) meta.append(el('span', null, pl));
+      info.append(meta);
+      info.append(el('div', 'mt-1 text-xs text-muted', `رُفع ${fmtShort(tsISO(r.created))}، ${r.kind === 'pdf' ? 'PDF' : 'صورة'}، ${fmtSize(r.size)}`));
+
+      const acts = el('div', 'mt-2 flex flex-wrap gap-2');
+      [['معاينة', 'view', 'btn-primary'], ['تنزيل', 'dl', 'btn-ghost'], ['حذف', 'del', 'btn-ghost']].forEach(([label, act, kind]) => {
+        const b = el('button', `btn btn-sm ${kind}`, label);
+        b.type = 'button';
+        b.dataset.act = act;
+        b.dataset.id = r.id;
+        acts.append(b);
+      });
+      info.append(acts);
+
+      li.append(th, info);
+      list.append(li);
+    });
+  }
+
+  function downloadReport(r) {
+    const u = URL.createObjectURL(r.blob);
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = r.name || 'report';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 30000);
+  }
+
+  /* ---------- عارض الصور ---------- */
+  let viewerUrl = null, viewerFocus = null, viewerRec = null;
+  function closeViewer() {
+    const v = $('viewer');
+    v.classList.add('hidden');
+    v.classList.remove('flex');
+    document.removeEventListener('keydown', onViewerKey);
+    $('viewerImg').removeAttribute('src');
+    if (viewerUrl) { URL.revokeObjectURL(viewerUrl); viewerUrl = null; }
+    if (viewerFocus && viewerFocus.focus) viewerFocus.focus();
+    viewerRec = null;
+  }
+  function onViewerKey(e) { if (e.key === 'Escape') closeViewer(); }
+
+  function openReport(r) {
+    if (r.kind === 'pdf') {
+      const u = URL.createObjectURL(r.blob);
+      const w = window.open(u, '_blank');
+      if (!w) downloadReport(r);
+      setTimeout(() => URL.revokeObjectURL(u), 300000);
+      return;
+    }
+    viewerRec = r;
+    viewerFocus = document.activeElement;
+    viewerUrl = URL.createObjectURL(r.blob);
+    $('viewerImg').src = viewerUrl;
+    $('viewerImg').alt = r.title;
+    $('viewerTitle').textContent = r.title;
+    $('viewerBody').classList.remove('full');
+    $('viewerZoom').textContent = 'الحجم الكامل';
+    $('viewerBody').scrollTop = 0;
+    const v = $('viewer');
+    v.classList.remove('hidden');
+    v.classList.add('flex');
+    document.addEventListener('keydown', onViewerKey);
+    $('viewerClose').focus();
+  }
+
+  $('viewerClose').addEventListener('click', closeViewer);
+  $('viewerDl').addEventListener('click', () => { if (viewerRec) downloadReport(viewerRec); });
+  $('viewerZoom').addEventListener('click', () => {
+    const full = $('viewerBody').classList.toggle('full');
+    $('viewerZoom').textContent = full ? 'ملاءمة الشاشة' : 'الحجم الكامل';
+  });
+
+  $('rpList').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const r = reports.find(x => x.id === b.dataset.id);
+    if (!r) return;
+    if (b.dataset.act === 'view') openReport(r);
+    else if (b.dataset.act === 'dl') downloadReport(r);
+    else if (b.dataset.act === 'del') {
+      const yes = await ask({
+        title: 'حذف هذا التقرير؟',
+        message: `سيُحذف «${r.title}» من هاتفك نهائيًا. نزّل نسخة منه أولًا إن كنت تحتاجه.`,
+        actions: [
+          { label: 'حذف التقرير', value: true, kind: 'btn-danger' },
+          { label: 'إلغاء', value: false, kind: 'btn-ghost', focus: true }
+        ]
+      });
+      if (!yes) return;
+      try {
+        await dbTx('readwrite', st => st.delete(r.id));
+        reports = reports.filter(x => x.id !== r.id);
+        renderReports();
+        toast('تم حذف التقرير');
+      } catch (err) { toast('تعذّر حذف التقرير'); }
+    }
+  });
+
+  document.querySelectorAll('[data-filter]').forEach(b => {
+    b.addEventListener('click', () => { rpFilter = b.dataset.filter; renderReports(); });
+  });
+
+  $('rpType').addEventListener('change', syncPeriodFields);
+
+  $('rpForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const files = $('rpFile').files;
+    const type = $('rpType').value;
+    const period = readPeriod(type);
+    if (!files || !files.length) { setRpErr('اختر صورة أو ملف PDF أولًا.'); return; }
+    if (type === 'monthly' && !period) { setRpErr('اختر الشهر.'); return; }
+    if (type === 'yearly' && !period) { setRpErr('أدخل سنة صحيحة، مثل 2026.'); return; }
+    setRpErr('');
+
+    const btn = $('rpSubmit');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'جارٍ الحفظ...';
+    try {
+      const n = await addReports(files, type, period, $('rpTitle').value.trim());
+      if (n) {
+        $('rpFile').value = '';
+        $('rpTitle').value = '';
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+        toast(`تم حفظ ${fileWord(n)}`);
+      }
+    } catch (err) {
+      setRpErr(err && err.name === 'QuotaExceededError'
+        ? 'مساحة التخزين على الهاتف ممتلئة. احذف بعض التقارير أو حرّر مساحة ثم أعد المحاولة.'
+        : 'تعذّر حفظ الملف في هذا المتصفح.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+      renderReports();
+    }
+  });
+
+  // من تقرير الدقة إلى رفع جدول المقارنة النهائي
+  $('goAttach').addEventListener('click', () => {
+    $('rpType').value = 'compare';
+    syncPeriodFields();
+    const sel = $('rankPeriod');
+    if (sel.value !== 'all') {
+      const o = sel.options[sel.selectedIndex];
+      $('rpText').value = o ? o.textContent : '';
+    }
+    setTab('reports');
+    scrollToEl($('rpForm'));
+  });
+
+  async function initReports() {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    $('rpMonth').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+    $('rpYear').value = String(new Date().getFullYear());
+    syncPeriodFields();
+    try {
+      reports = (await dbTx('readonly', st => st.getAll())) || [];
+    } catch (e) {
+      $('rpWarn').classList.remove('hidden');
+    }
+    renderReports();
+  }
+
+  /* =====================================================
+     زر التثبيت (PWA)
+     ===================================================== */
+  let installEvt = null;
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function showInstall(show) {
+    const bar = $('installBar');
+    bar.classList.toggle('hidden', !show);
+    bar.classList.toggle('flex', show);
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installEvt = e;
+    if (!isStandalone() && readStore('rain-log-install-dismissed') !== '1') {
+      $('installBtn').classList.remove('hidden');
+      showInstall(true);
+    }
+  });
+  window.addEventListener('appinstalled', () => { installEvt = null; showInstall(false); toast('تم تثبيت التطبيق'); });
+
+  $('installBtn').addEventListener('click', async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (e) {}
+    installEvt = null;
+    showInstall(false);
+  });
+  $('installClose').addEventListener('click', () => { writeStore('rain-log-install-dismissed', '1'); showInstall(false); });
+
+  if (isIOS() && !isStandalone() && readStore('rain-log-install-dismissed') !== '1') {
+    $('installText').textContent = 'لتثبيت التطبيق على iPhone: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية».';
+    $('installBtn').classList.add('hidden');
+    showInstall(true);
+  }
 
   /* ---------- تشغيل ---------- */
   function setDefaultDate() {
@@ -1560,6 +2104,7 @@
   setDefaultDate();
   initForecastUI();
   renderAll();
+  initReports();
 })();
 </script>
 </body>
