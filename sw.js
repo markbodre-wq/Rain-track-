@@ -1,5 +1,5 @@
 // غيّر رقم الإصدار عند تعديل index.html ليصل التحديث إلى الهاتف
-const CACHE = 'rain-log-v3';
+const CACHE = 'rain-log-v4';
 
 const CORE = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
