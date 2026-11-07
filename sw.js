@@ -1,7 +1,7 @@
 // غيّر رقم الإصدار عند تعديل index.html ليصل التحديث إلى الهاتف
-const CACHE = 'rain-log-v2';
+const CACHE = 'rain-log-v3';
 
-const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CORE = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 const EXTERNAL = [
   'https://cdn.tailwindcss.com',
