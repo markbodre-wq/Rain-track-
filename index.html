@@ -18,7 +18,7 @@
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-  tailwind.config = {
+  if (window.tailwind) tailwind.config = {
     theme: {
       extend: {
         colors: {
@@ -90,6 +90,8 @@
   html { -webkit-text-size-adjust: 100%; }
   body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
 
+  .hidden { display: none; }
+
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .field {
@@ -143,6 +145,11 @@
 
 <div id="warn" class="sticky top-0 z-40 hidden bg-warnbg px-4 py-3 text-sm text-warnink" role="alert">
   تعذّر الحفظ داخل هذا المتصفح (ربما بسبب وضع التصفح الخاص). ستضيع السجلات عند إغلاق الصفحة، فصدّر نسخة احتياطية أولاً بأول.
+</div>
+
+<div id="errBar" class="sticky top-0 z-40 hidden items-start justify-between gap-3 bg-warnbg px-4 py-3 text-sm text-warnink" role="alert">
+  <p class="min-w-0 flex-1">⚠️ حدث خطأ في التطبيق: <span id="errMsg" dir="ltr" class="break-words"></span></p>
+  <button id="errClose" type="button" class="shrink-0 font-semibold underline">إخفاء</button>
 </div>
 
 <main class="mx-auto w-full max-w-xl space-y-8 px-4 pb-24 pt-6">
@@ -232,9 +239,10 @@
     <p class="mt-1 text-sm text-muted">إجمالي السنة: <strong id="yearTotal" class="font-semibold text-ink tabular-nums"></strong></p>
 
     <div class="mt-4 rounded-3xl border border-line bg-surface p-3">
-      <div class="relative h-[390px]">
+      <div id="chartWrap" class="relative h-[390px]">
         <canvas id="chart" role="img" aria-label="رسم بياني لكميات الأمطار الشهرية"></canvas>
       </div>
+      <p id="chartMsg" class="hidden p-3 text-sm text-muted">تعذّر تحميل مكتبة الرسوم البيانية، فلن يظهر الرسم الآن. بقية التطبيق تعمل بشكل طبيعي، وقائمة الإجمالي الشهري أدناه تعرض الأرقام نفسها. تحقق من الاتصال بالإنترنت ثم أعد فتح التطبيق.</p>
     </div>
 
     <ul id="monthList" class="mt-3 divide-y divide-line"></ul>
@@ -414,4 +422,1573 @@
   </section>
 
   <section aria-labelledby="fbPrevTitle">
-    <h2 id="fbPrevTitle" class="text-lg f
+    <h2 id="fbPrevTitle" class="text-lg font-semibold">معاينة التقرير</h2>
+    <p id="fbEmpty" class="mt-2 hidden text-sm text-muted">لا توجد سجلات في هذه الفترة. سجّل كميات الأمطار أولًا في تبويب الأمطار، أو اختر فترة أخرى.</p>
+    <textarea id="fbText" rows="16" spellcheck="false" aria-label="نص التقرير" class="field mt-3" style="min-height:18rem;line-height:1.75;resize:vertical" dir="rtl"></textarea>
+    <div class="mt-3 grid grid-cols-2 gap-3">
+      <button id="fbShare" type="button" class="btn btn-ghost">مشاركة</button>
+      <button id="fbReset" type="button" class="btn btn-ghost">استرجاع النص الأصلي</button>
+    </div>
+  </section>
+
+</div><!-- /viewReport -->
+
+  <!-- النسخ الاحتياطي -->
+  <section aria-labelledby="bkTitle" class="rounded-3xl border border-line p-5">
+    <h2 id="bkTitle" class="text-lg font-semibold">النسخ الاحتياطي</h2>
+    <p class="mt-1 text-sm text-muted">بياناتك محفوظة داخل متصفح هذا الهاتف فقط. صدّر نسخة (تشمل السجلات والتوقعات) بين فترة وأخرى لتستعيدها إن مسحت بيانات المتصفح أو انتقلت إلى هاتف آخر.</p>
+    <p id="lastExport" class="mt-2 text-sm"></p>
+    <div class="mt-4 grid grid-cols-2 gap-3">
+      <button id="exportBtn" type="button" class="btn btn-primary">تصدير نسخة</button>
+      <button id="importBtn" type="button" class="btn btn-ghost">استيراد نسخة</button>
+    </div>
+    <input id="importFile" type="file" accept=".json,application/json" class="hidden">
+  </section>
+
+</main>
+
+<!-- نافذة التأكيد -->
+<div id="modal" class="fixed inset-0 z-50 hidden items-end justify-center bg-black/50 p-4 sm:items-center"
+     role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="w-full max-w-sm rounded-3xl border border-line bg-surface p-5 shadow-xl">
+    <h3 id="modalTitle" class="text-lg font-semibold"></h3>
+    <p id="modalMsg" class="mt-2 text-sm text-muted"></p>
+    <div id="modalActions" class="mt-5 flex flex-col gap-2"></div>
+  </div>
+</div>
+
+<!-- إشعار قصير -->
+<div class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4" aria-live="polite">
+  <div id="toast" class="hidden max-w-sm rounded-2xl bg-ink px-4 py-3 text-sm text-bg shadow-lg"></div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- ثوابت وحالة ---------- */
+  const KEY = 'rain-log-v1';
+  const KEY_EXPORT = 'rain-log-last-export';
+  const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  const DAYS = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const PAGE_SIZE = 30;
+  const KEY_FC = 'rain-log-forecasts-v1';
+  const KEY_MODELS = 'rain-log-models-v1';
+  const DEFAULT_MODELS = ['GFS', 'ECMWF', 'AROME', 'UKMO'];
+  const FONT = '"IBM Plex Sans Arabic", Tahoma, Arial, sans-serif';
+  const TRASH = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/><path d="M10 11v5M14 11v5"/></svg>';
+
+  let records = [];
+  let storageOk = true;
+  let year = new Date().getFullYear();
+  let showAll = false;
+  let chart = null;
+  let autoDate = '';
+  let forecasts = [];
+  let models = [];
+
+  /* ---------- أدوات ---------- */
+  const $ = id => document.getElementById(id);
+  const pad = n => String(n).padStart(2, '0');
+  const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+  const fmt = n => String(Number(round2(n).toFixed(2)));
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function parts(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return { y, m, d, dow: new Date(y, m - 1, d).getDay() };
+  }
+  const fmtDate = iso => { const p = parts(iso); return `${DAYS[p.dow]} ${p.d} ${MONTHS[p.m - 1]} ${p.y}`; };
+  const fmtShort = iso => {
+    const p = parts(iso);
+    const cy = new Date().getFullYear();
+    return `${p.d} ${MONTHS[p.m - 1]}${p.y !== cy ? ' ' + p.y : ''}`;
+  };
+
+  function dayWord(n) {
+    if (n === 1) return 'يوم ماطر واحد';
+    if (n === 2) return 'يومان ماطران';
+    if (n <= 10) return `${n} أيام ماطرة`;
+    return `${n} يومًا ماطرًا`;
+  }
+  function countWord(n) {
+    if (n === 1) return 'سجل واحد';
+    if (n === 2) return 'سجلان';
+    if (n <= 10) return `${n} سجلات`;
+    return `${n} سجلًا`;
+  }
+
+  // يقبل الأرقام العربية والهندية والفاصلة العربية
+  function parseNum(s) {
+    s = String(s).trim()
+      .replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x0660)
+      .replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x06F0)
+      .replace(/[٫,،]/g, '.');
+    if (!/^(\d+(\.\d+)?|\.\d+)$/.test(s)) return NaN;
+    return parseFloat(s);
+  }
+
+  /* ---------- التقاط الأخطاء وعرضها ---------- */
+  function reportError(e) {
+    const msg = String((e && e.message) || e || 'خطأ غير معروف');
+    if (/^(ResizeObserver|Script error)/.test(msg)) return;
+    const bar = $('errBar');
+    if (!bar) return;
+    $('errMsg').textContent = msg.slice(0, 160);
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+  }
+  window.addEventListener('error', ev => { if (ev && ev.message) reportError(ev.message); });
+  window.addEventListener('unhandledrejection', ev => reportError(ev.reason));
+  $('errClose').addEventListener('click', () => { $('errBar').classList.add('hidden'); $('errBar').classList.remove('flex'); });
+
+  /* ---------- التخزين ---------- */
+  function readStore(k) {
+    try { return localStorage.getItem(k); } catch (e) { storageOk = false; return null; }
+  }
+  function writeStore(k, v) {
+    try { localStorage.setItem(k, v); return true; } catch (e) { storageOk = false; return false; }
+  }
+
+  function clean(r) {
+    if (!r || typeof r !== 'object') return null;
+    const date = String(r.date || '');
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+    if (!m) return null;
+    const dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (dt.getFullYear() !== +m[1] || dt.getMonth() !== +m[2] - 1 || dt.getDate() !== +m[3]) return null;
+    const mm = typeof r.mm === 'number' ? r.mm : parseFloat(r.mm);
+    if (!Number.isFinite(mm) || mm < 0 || mm > 2000) return null;
+    return {
+      id: (typeof r.id === 'string' && r.id) ? r.id.slice(0, 40) : uid(),
+      date,
+      mm: round2(mm),
+      note: String(r.note || '').slice(0, 200),
+      created: Number.isFinite(r.created) ? r.created : Date.now()
+    };
+  }
+
+  function load() {
+    const raw = readStore(KEY);
+    if (raw) {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) records = arr.map(clean).filter(Boolean);
+      } catch (e) { /* بيانات تالفة: نبدأ من جديد */ }
+    }
+    const rawFc = readStore(KEY_FC);
+    if (rawFc) {
+      try {
+        const a = JSON.parse(rawFc);
+        if (Array.isArray(a)) forecasts = a.map(cleanForecast).filter(Boolean);
+      } catch (e) {}
+    }
+    let md = null;
+    const rawMd = readStore(KEY_MODELS);
+    if (rawMd) {
+      try {
+        const a = JSON.parse(rawMd);
+        if (Array.isArray(a)) md = a.map(cleanModelName).filter(Boolean);
+      } catch (e) {}
+    }
+    models = (md && md.length) ? [...new Set(md)] : [...DEFAULT_MODELS];
+
+    if (!writeStore('rain-log-probe', '1')) storageOk = false;
+    else { try { localStorage.removeItem('rain-log-probe'); } catch (e) {} }
+  }
+
+  function save() {
+    const ok = writeStore(KEY, JSON.stringify(records));
+    renderWarn();
+    return ok;
+  }
+
+  /* ---------- حسابات ---------- */
+  function yearsList() {
+    const set = new Set([new Date().getFullYear()]);
+    records.forEach(r => set.add(+r.date.slice(0, 4)));
+    return [...set].sort((a, b) => b - a);
+  }
+
+  function monthStats(y) {
+    const tot = Array(12).fill(0);
+    const days = Array.from({ length: 12 }, () => new Set());
+    records.forEach(r => {
+      if (+r.date.slice(0, 4) !== y) return;
+      const m = +r.date.slice(5, 7) - 1;
+      tot[m] += r.mm;
+      if (r.mm > 0) days[m].add(r.date);
+    });
+    return tot.map((t, i) => ({ total: round2(t), days: days[i].size }));
+  }
+
+  /* ---------- واجهة: تنبيه التخزين ---------- */
+  function renderWarn() {
+    $('warn').classList.toggle('hidden', storageOk);
+  }
+
+  /* ---------- واجهة: مقياس المطر ---------- */
+  function renderHero() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const stats = monthStats(y);
+    const cur = stats[m];
+    const yearTotal = round2(stats.reduce((s, x) => s + x.total, 0));
+
+    $('heroMonth').textContent = `${MONTHS[m]} ${y}`;
+    $('heroTotal').textContent = fmt(cur.total);
+    $('heroSub').textContent = cur.days ? dayWord(cur.days) : 'لا أمطار مسجلة هذا الشهر';
+    $('heroYear').textContent = y;
+    $('heroYearTotal').textContent = `${fmt(yearTotal)} مم`;
+
+    if (records.length) {
+      const last = [...records].sort((a, b) => (b.date.localeCompare(a.date)) || (b.created - a.created))[0];
+      $('heroLast').textContent = `${fmt(last.mm)} مم في ${fmtShort(last.date)}`;
+    } else {
+      $('heroLast').textContent = 'لا توجد سجلات';
+    }
+
+    // سلّم المقياس
+    const steps = [20, 40, 100, 200, 400, 1000, 2000, 4000];
+    let max = steps.find(s => s >= cur.total);
+    if (!max) max = Math.ceil(cur.total / 1000) * 1000;
+
+    const ticks = $('gaugeTicks');
+    ticks.replaceChildren();
+    for (let i = 0; i <= 4; i++) {
+      const t = el('div', 'absolute right-0 flex translate-y-1/2 items-center gap-1.5');
+      t.style.bottom = (i * 25) + '%';
+      t.append(el('span', 'h-px w-2.5 bg-white/50'), el('span', 'text-xs tabular-nums text-white/70', fmt(max * i / 4)));
+      ticks.append(t);
+    }
+
+    let pct = Math.min(100, (cur.total / max) * 100);
+    if (cur.total > 0 && pct < 2) pct = 2;
+    requestAnimationFrame(() => { $('gaugeFill').style.height = pct + '%'; });
+    $('gauge').setAttribute('aria-label', `مقياس المطر: ${fmt(cur.total)} مم من أصل ${fmt(max)} مم`);
+  }
+
+  /* ---------- واجهة: الإجمالي الشهري والرسم ---------- */
+  function renderYearSelect() {
+    const years = yearsList();
+    if (!years.includes(year)) year = new Date().getFullYear();
+    const sel = $('yearSelect');
+    sel.replaceChildren();
+    years.forEach(y => {
+      const o = el('option', null, String(y));
+      o.value = y;
+      if (y === year) o.selected = true;
+      sel.append(o);
+    });
+  }
+
+  let chartLoading = false;
+  function chartAvailable(ok) {
+    $('chartWrap').classList.toggle('hidden', !ok);
+    $('chartMsg').classList.toggle('hidden', ok);
+  }
+  // مصدر بديل للمكتبة إن تعذّر المصدر الأول
+  function loadChartFallback() {
+    if (chartLoading) return;
+    chartLoading = true;
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+    sc.onload = () => { if (typeof Chart !== 'undefined') renderMonthly(); };
+    document.head.appendChild(sc);
+  }
+
+  function renderChart(stats) {
+    if (typeof Chart === 'undefined') { chartAvailable(false); loadChartFallback(); return; }
+    chartAvailable(true);
+    if (chart) { try { chart.destroy(); } catch (e) {} chart = null; }
+
+    const totals = stats.map(s => s.total);
+    const maxV = Math.max(...totals);
+    const barColor = css('--bar');
+    const maxColor = css('--bar-max');
+    const grid = css('--grid');
+    const tick = css('--muted');
+    const ink = css('--ink');
+
+    Chart.defaults.font.family = FONT;
+
+    try {
+    chart = new Chart($('chart'), {
+      type: 'bar',
+      data: {
+        labels: MONTHS,
+        datasets: [{
+          label: 'كمية الأمطار (مم)',
+          data: totals,
+          backgroundColor: totals.map(t => (t > 0 && t === maxV) ? maxColor : barColor),
+          borderRadius: 6,
+          borderSkipped: false,
+          maxBarThickness: 18
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 600 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            rtl: true,
+            textDirection: 'rtl',
+            displayColors: false,
+            padding: 10,
+            callbacks: {
+              label: c => `${fmt(c.parsed.x)} مم`,
+              afterLabel: c => stats[c.dataIndex].days ? dayWord(stats[c.dataIndex].days) : 'لا أيام ماطرة'
+            }
+          }
+        },
+        scales: {
+          x: {
+            reverse: true,
+            beginAtZero: true,
+            suggestedMax: maxV === 0 ? 10 : undefined,
+            grid: { color: grid },
+            ticks: { color: tick },
+            title: { display: true, text: 'مم', color: tick }
+          },
+          y: {
+            position: 'right',
+            grid: { display: false },
+            ticks: { color: ink, font: { size: 12 } }
+          }
+        }
+      }
+    });
+    } catch (e) { chart = null; chartAvailable(false); }
+  }
+
+  function renderMonthly() {
+    const stats = monthStats(year);
+    const yTotal = round2(stats.reduce((s, x) => s + x.total, 0));
+    $('yearTotal').textContent = `${fmt(yTotal)} مم`;
+
+    renderChart(stats);
+
+    const list = $('monthList');
+    list.replaceChildren();
+    const maxV = Math.max(...stats.map(s => s.total));
+    let any = false;
+    for (let i = 11; i >= 0; i--) {
+      const s = stats[i];
+      if (!(s.total > 0 || s.days > 0)) continue;
+      any = true;
+      const li = el('li', 'py-3');
+      const head = el('div', 'flex items-baseline justify-between gap-3');
+      head.append(el('span', 'font-medium', MONTHS[i]), el('span', 'font-semibold tabular-nums', `${fmt(s.total)} مم`));
+      const barRow = el('div', 'mt-2 flex items-center gap-3');
+      const track = el('div', 'h-1.5 flex-1 overflow-hidden rounded-full bg-field');
+      const bar = el('div', 'h-full rounded-full bg-accent');
+      bar.style.width = (maxV > 0 ? Math.max(2, (s.total / maxV) * 100) : 0) + '%';
+      track.append(bar);
+      barRow.append(track, el('span', 'shrink-0 text-xs text-muted', s.days ? dayWord(s.days) : 'بلا أمطار'));
+      li.append(head, barRow);
+      list.append(li);
+    }
+    $('monthEmpty').classList.toggle('hidden', any);
+  }
+
+  /* ---------- واجهة: جدول السجلات ---------- */
+  function renderRecords() {
+    const sorted = [...records].sort((a, b) => (b.date.localeCompare(a.date)) || (b.created - a.created));
+    const body = $('recBody');
+    body.replaceChildren();
+
+    $('recCount').textContent = sorted.length ? countWord(sorted.length) : '';
+    $('recEmpty').classList.toggle('hidden', sorted.length > 0);
+    $('recBody').parentElement.classList.toggle('hidden', sorted.length === 0);
+
+    const visible = showAll ? sorted : sorted.slice(0, PAGE_SIZE);
+    const seenDates = new Set();
+    visible.forEach(r => {
+      const tr = el('tr');
+
+      const td1 = el('td', 'px-4 py-3 align-top');
+      td1.append(el('div', 'font-medium', fmtDate(r.date)));
+      if (r.note) td1.append(el('div', 'mt-0.5 break-words text-sm text-muted', r.note));
+      if (!seenDates.has(r.date)) {
+        seenDates.add(r.date);
+        const fc = forecasts.find(f => f.date === r.date);
+        if (fc) {
+          const ev = evaluate(fc);
+          if (ev.actual !== null && ev.entries.length > 1) {
+            td1.append(el('div', 'mt-0.5 text-sm text-accent',
+              ev.tie ? 'النماذج متساوية في الدقة' : `الأقرب للواقع: ${ev.winners.join(' و')}`));
+          }
+        }
+      }
+
+      const td2 = el('td', 'whitespace-nowrap px-2 py-3 align-top font-semibold tabular-nums');
+      td2.append(fmt(r.mm) + ' ', el('span', 'text-sm font-normal text-muted', 'مم'));
+
+      const td3 = el('td', 'py-1.5 pe-2 ps-1 align-top');
+      const b = el('button', 'inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:text-danger');
+      b.type = 'button';
+      b.dataset.id = r.id;
+      b.setAttribute('aria-label', 'حذف سجل ' + fmtDate(r.date));
+      b.innerHTML = TRASH;
+      td3.append(b);
+
+      tr.append(td1, td2, td3);
+      body.append(tr);
+    });
+
+    const more = $('showAll');
+    if (sorted.length > PAGE_SIZE) {
+      more.classList.remove('hidden');
+      more.textContent = showAll ? 'عرض الأحدث فقط' : `عرض كل السجلات (${sorted.length})`;
+    } else {
+      more.classList.add('hidden');
+    }
+  }
+
+  /* ---------- واجهة: النسخ الاحتياطي ---------- */
+  function renderBackup() {
+    const raw = readStore(KEY_EXPORT);
+    const p = $('lastExport');
+    if (raw) {
+      const d = new Date(raw);
+      p.textContent = `آخر نسخة احتياطية: ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    } else {
+      p.textContent = records.length ? 'لم تُصدَّر نسخة احتياطية بعد.' : '';
+    }
+  }
+
+  function safe(fn) { try { fn(); } catch (e) { console.error(e); reportError(e); } }
+  function renderAll() {
+    [
+      renderWarn, renderHero, renderYearSelect, renderMonthly, renderRecords,
+      renderForecasts, renderBackup, fbBuildPeriods,
+      () => { if (currentTab === 'report' && !fbDirty) fbRegenerate(); }
+    ].forEach(safe);
+  }
+
+  /* ---------- إشعار ونافذة تأكيد ---------- */
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.add('hidden'), 3000);
+  }
+
+  function ask({ title, message, actions }) {
+    return new Promise(resolve => {
+      const modal = $('modal');
+      const box = $('modalActions');
+      const lastFocus = document.activeElement;
+      $('modalTitle').textContent = title;
+      $('modalMsg').textContent = message;
+      box.replaceChildren();
+
+      const close = v => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.removeEventListener('keydown', onKey);
+        modal.onclick = null;
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+        resolve(v);
+      };
+      const onKey = e => { if (e.key === 'Escape') close(null); };
+
+      let focusBtn = null;
+      actions.forEach((a, i) => {
+        const b = el('button', 'btn ' + (a.kind || 'btn-ghost'), a.label);
+        b.type = 'button';
+        b.onclick = () => close(a.value);
+        box.append(b);
+        if (a.focus || (!focusBtn && i === 0)) focusBtn = b;
+      });
+
+      modal.onclick = e => { if (e.target === modal) close(null); };
+      document.addEventListener('keydown', onKey);
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      focusBtn.focus();
+    });
+  }
+
+  /* ---------- النموذج ---------- */
+  function setErr(inputId, errId, msg) {
+    const input = $(inputId), err = $(errId);
+    if (msg) {
+      err.textContent = msg;
+      err.classList.remove('hidden');
+      input.setAttribute('aria-invalid', 'true');
+    } else {
+      err.classList.add('hidden');
+      input.removeAttribute('aria-invalid');
+    }
+  }
+
+  $('rainForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const date = $('date').value;
+    const mm = parseNum($('mm').value);
+
+    setErr('date', 'dateErr', date ? '' : 'اختر تاريخ التسجيل.');
+    let mmMsg = '';
+    if (!Number.isFinite(mm)) mmMsg = 'أدخل كمية صحيحة بالمليمتر، مثل 12.5';
+    else if (mm > 2000) mmMsg = 'الكمية كبيرة جدًا، تحقق من الرقم.';
+    setErr('mm', 'mmErr', mmMsg);
+
+    if (!date) { $('date').focus(); return; }
+    if (mmMsg) { $('mm').focus(); return; }
+
+    const sameDay = records.some(r => r.date === date);
+    records.push({
+      id: uid(),
+      date,
+      mm: round2(mm),
+      note: $('note').value.trim().slice(0, 200),
+      created: Date.now()
+    });
+
+    year = +date.slice(0, 4);
+    const ok = save();
+    $('mm').value = '';
+    $('note').value = '';
+    renderAll();
+    toast(!ok ? 'تعذّر الحفظ في هذا المتصفح' : sameDay ? 'تمت إضافة تسجيل آخر لنفس اليوم' : 'تم حفظ التسجيل');
+  });
+
+  $('mm').addEventListener('input', () => setErr('mm', 'mmErr', ''));
+  $('date').addEventListener('input', () => setErr('date', 'dateErr', ''));
+
+  /* ---------- حذف ---------- */
+  $('recBody').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    const rec = records.find(r => r.id === btn.dataset.id);
+    if (!rec) return;
+    const answer = await ask({
+      title: 'حذف هذا السجل؟',
+      message: `${fmtDate(rec.date)}: ${fmt(rec.mm)} مم. لا يمكن التراجع عن الحذف.`,
+      actions: [
+        { label: 'حذف السجل', value: true, kind: 'btn-danger' },
+        { label: 'إلغاء', value: false, kind: 'btn-ghost', focus: true }
+      ]
+    });
+    if (!answer) return;
+    records = records.filter(r => r.id !== rec.id);
+    save();
+    renderAll();
+    toast('تم حذف السجل');
+  });
+
+  $('showAll').addEventListener('click', () => { showAll = !showAll; renderRecords(); });
+
+  $('yearSelect').addEventListener('change', e => { year = +e.target.value; renderMonthly(); });
+
+  /* ---------- تصدير / استيراد ---------- */
+  $('exportBtn').addEventListener('click', () => {
+    if (!records.length && !forecasts.length) { toast('لا توجد بيانات لتصديرها بعد'); return; }
+    const payload = { app: 'rain-log', version: 2, exportedAt: new Date().toISOString(), records, forecasts, models };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rain-log-${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    writeStore(KEY_EXPORT, new Date().toISOString());
+    renderBackup();
+    toast('تم تصدير النسخة الاحتياطية');
+  });
+
+  $('importBtn').addEventListener('click', () => $('importFile').click());
+
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(fr.error);
+      fr.readAsText(file);
+    });
+  }
+
+  $('importFile').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    let incoming = [];
+    let incFc = [];
+    let incModels = [];
+    let hasFc = false;
+    let total = 0;
+    try {
+      const data = JSON.parse(await readFile(file));
+      const isObj = data && typeof data === 'object' && !Array.isArray(data);
+      const arr = Array.isArray(data) ? data : (isObj ? data.records : null);
+      const fcArr = (isObj && Array.isArray(data.forecasts)) ? data.forecasts : null;
+      const mdArr = (isObj && Array.isArray(data.models)) ? data.models : [];
+      if (!Array.isArray(arr) && !fcArr) throw new Error('bad');
+      const recArr = Array.isArray(arr) ? arr : [];
+      total = recArr.length;
+      incoming = recArr.map(clean).filter(Boolean);
+      hasFc = !!fcArr;
+      incFc = (fcArr || []).map(cleanForecast).filter(Boolean);
+      incModels = mdArr.map(cleanModelName).filter(Boolean);
+      if (!incoming.length && !incFc.length) throw new Error('empty');
+    } catch (err) {
+      toast('الملف غير صالح. اختر نسخة احتياطية صدّرها هذا التطبيق.');
+      return;
+    }
+
+    const invalid = total - incoming.length;
+    const found = [];
+    if (incoming.length) found.push(countWord(incoming.length));
+    if (incFc.length) found.push(fcWord(incFc.length));
+    const choice = await ask({
+      title: 'استيراد البيانات',
+      message: `وجدنا في الملف: ${found.join(' و')}${invalid ? ` (تم تجاهل ${invalid} سجلًا غير صالح)` : ''}. هل تدمجها مع بياناتك الحالية، أم تستبدل الحالية بها؟`,
+      actions: [
+        { label: 'دمج مع البيانات الحالية', value: 'merge', kind: 'btn-primary' },
+        { label: 'استبدال البيانات الحالية', value: 'replace', kind: 'btn-danger' },
+        { label: 'إلغاء', value: null, kind: 'btn-ghost' }
+      ]
+    });
+    if (!choice) return;
+
+    const sig = r => `${r.date}|${r.mm}|${r.note}`;
+    let added = 0, skipped = 0;
+
+    if (choice === 'replace' && incoming.length) {
+      const ids = new Set();
+      records = incoming.map(r => {
+        if (ids.has(r.id)) r.id = uid();
+        ids.add(r.id);
+        return r;
+      });
+      added = records.length;
+    } else {
+      const ids = new Set(records.map(r => r.id));
+      const sigs = new Set(records.map(sig));
+      incoming.forEach(r => {
+        if (ids.has(r.id) || sigs.has(sig(r))) { skipped++; return; }
+        ids.add(r.id);
+        sigs.add(sig(r));
+        records.push(r);
+        added++;
+      });
+    }
+
+    let fcAdded = 0;
+    if (incFc.length) {
+      if (choice === 'replace' && hasFc) {
+        const seen = new Set();
+        forecasts = incFc.filter(f => !seen.has(f.date) && seen.add(f.date));
+        fcAdded = forecasts.length;
+      } else {
+        const dates = new Set(forecasts.map(f => f.date));
+        const fids = new Set(forecasts.map(f => f.id));
+        incFc.forEach(f => {
+          if (dates.has(f.date) || fids.has(f.id)) { skipped++; return; }
+          dates.add(f.date);
+          fids.add(f.id);
+          forecasts.push(f);
+          fcAdded++;
+        });
+      }
+    }
+    const known = new Set(models);
+    [...incModels, ...incFc.flatMap(f => Object.keys(f.values))].forEach(n => {
+      if (!known.has(n)) { known.add(n); models.push(n); }
+    });
+
+    save();
+    saveForecasts();
+    saveModels();
+    year = new Date().getFullYear();
+    renderAll();
+    renderModelInputs();
+    fillForecastForm($('fcDate').value);
+
+    const done = [];
+    if (added) done.push(countWord(added));
+    if (fcAdded) done.push(fcWord(fcAdded));
+    toast(done.length
+      ? `تم استيراد ${done.join(' و')}${skipped ? ` وتخطي ${skipped} مكرر` : ''}`
+      : 'لا توجد بيانات جديدة (كلها مكررة)');
+  });
+
+  /* =====================================================
+     التوقعات: إدخال نتائج النماذج العددية ومقارنتها بالمقاس الفعلي
+     ===================================================== */
+  const MEAN_KEY = '__mean__';
+  const MEAN_LABEL = 'متوسط النماذج';
+
+  function fcWord(n) {
+    if (n === 1) return 'توقع واحد';
+    if (n === 2) return 'توقعان';
+    if (n <= 10) return `${n} توقعات`;
+    return `${n} توقعًا`;
+  }
+  function dayN(n) {
+    if (n === 1) return 'يوم واحد';
+    if (n === 2) return 'يومين';
+    if (n <= 10) return `${n} أيام`;
+    return `${n} يومًا`;
+  }
+
+  function addDaysISO(n) {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function validISO(date) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+    if (!m) return false;
+    const dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    return dt.getFullYear() === +m[1] && dt.getMonth() === +m[2] - 1 && dt.getDate() === +m[3];
+  }
+
+  function cleanModelName(n) {
+    n = String(n == null ? '' : n).trim().replace(/\s+/g, ' ').slice(0, 20);
+    return (n && n !== MEAN_KEY && n !== '__proto__') ? n : '';
+  }
+
+  function cleanForecast(f) {
+    if (!f || typeof f !== 'object' || !validISO(f.date) || !f.values || typeof f.values !== 'object') return null;
+    const values = {};
+    Object.entries(f.values).forEach(([k, v]) => {
+      const name = cleanModelName(k);
+      const num = typeof v === 'number' ? v : parseFloat(v);
+      if (name && Number.isFinite(num) && num >= 0 && num <= 2000) values[name] = round2(num);
+    });
+    if (!Object.keys(values).length) return null;
+    return {
+      id: (typeof f.id === 'string' && f.id) ? f.id.slice(0, 40) : uid(),
+      date: f.date,
+      values,
+      created: Number.isFinite(f.created) ? f.created : Date.now()
+    };
+  }
+
+  function saveForecasts() {
+    const ok = writeStore(KEY_FC, JSON.stringify(forecasts));
+    renderWarn();
+    return ok;
+  }
+  function saveModels() {
+    const ok = writeStore(KEY_MODELS, JSON.stringify(models));
+    renderWarn();
+    return ok;
+  }
+
+  function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+  function orderNames(names) {
+    const inList = models.filter(m => names.includes(m));
+    const rest = names.filter(n => !models.includes(n)).sort((a, b) => a.localeCompare(b, 'ar'));
+    return [...inList, ...rest];
+  }
+
+  // المقاس الفعلي ليوم معيّن = مجموع كل تسجيلات ذلك اليوم (أو null إن لم يُسجَّل شيء)
+  function actualFor(date) {
+    let sum = 0, has = false;
+    records.forEach(r => { if (r.date === date) { sum += r.mm; has = true; } });
+    return has ? round2(sum) : null;
+  }
+
+  function evaluate(f) {
+    const actual = actualFor(f.date);
+    const entries = Object.entries(f.values);
+    const mean = round2(entries.reduce((s, [, v]) => s + v, 0) / entries.length);
+    const out = { actual, mean, entries, errors: null, diffs: null, pcts: null, winners: [], tie: false, meanDiff: null, meanErr: null, meanPct: null };
+    if (actual === null) return out;
+    const errors = {}, diffs = {}, pcts = {};
+    entries.forEach(([n, v]) => {
+      diffs[n] = round2(v - actual);
+      errors[n] = Math.abs(diffs[n]);
+      pcts[n] = actual > 0 ? Math.round(errors[n] / actual * 100) : null;
+    });
+    const min = Math.min(...Object.values(errors));
+    out.winners = entries.filter(([n]) => errors[n] <= min + 0.001).map(([n]) => n);
+    out.tie = entries.length > 1 && out.winners.length === entries.length;
+    out.errors = errors; out.diffs = diffs; out.pcts = pcts;
+    out.meanDiff = round2(mean - actual);
+    out.meanErr = Math.abs(out.meanDiff);
+    out.meanPct = actual > 0 ? Math.round(out.meanErr / actual * 100) : null;
+    return out;
+  }
+
+  const RAIN_MM = 1; // اليوم الماطر: 1 مم فأكثر
+
+  function modelStats(prefix) {
+    const acc = new Map();
+    let evaluated = 0;
+    const slot = (key, isMean) => {
+      if (!acc.has(key)) acc.set(key, { name: key, isMean, sum: 0, act: 0, n: 0, wins: 0, rdOk: 0 });
+      return acc.get(key);
+    };
+    forecasts.forEach(f => {
+      const keep = typeof prefix === 'function' ? prefix(f.date) : (!prefix || prefix === 'all' || f.date.startsWith(prefix));
+      if (!keep) return;
+      const ev = evaluate(f);
+      if (ev.actual === null) return;
+      evaluated++;
+      const actRain = ev.actual >= RAIN_MM;
+      ev.entries.forEach(([n, v]) => {
+        const a = slot(n, false);
+        a.sum += ev.errors[n];
+        a.act += ev.actual;
+        a.n++;
+        if ((v >= RAIN_MM) === actRain) a.rdOk++;
+        if (!ev.tie && ev.entries.length > 1 && ev.winners.includes(n)) a.wins++;
+      });
+      if (ev.entries.length > 1) {
+        const a = slot(MEAN_KEY, true);
+        a.sum += ev.meanErr;
+        a.act += ev.actual;
+        a.n++;
+        if ((ev.mean >= RAIN_MM) === actRain) a.rdOk++;
+      }
+    });
+    const rows = [...acc.values()]
+      .map(a => ({
+        ...a,
+        mae: a.sum / a.n,
+        accQ: a.act > 0 ? Math.max(0, Math.round((1 - a.sum / a.act) * 100)) : null,
+        accR: Math.round(a.rdOk / a.n * 100)
+      }))
+      .sort((x, y) =>
+        ((y.accQ === null ? -1 : y.accQ) - (x.accQ === null ? -1 : x.accQ)) ||
+        (y.accR - x.accR) || (x.mae - y.mae));
+    return { rows, evaluated };
+  }
+
+  /* ---------- نموذج الإدخال ---------- */
+  function setFcErr(msg) {
+    const p = $('fcErr');
+    p.textContent = msg || '';
+    p.classList.toggle('hidden', !msg);
+  }
+
+  function renderModelChips() {
+    const box = $('modelList');
+    box.replaceChildren();
+    models.forEach(name => {
+      const chip = el('span', 'inline-flex items-center gap-1 rounded-full border border-line bg-field py-1 pe-1 ps-3 text-sm');
+      chip.append(el('span', null, name));
+      const b = el('button', 'inline-flex h-7 w-7 items-center justify-center rounded-full text-muted hover:text-danger', '×');
+      b.type = 'button';
+      b.dataset.remove = name;
+      b.disabled = models.length <= 1;
+      b.setAttribute('aria-label', 'إزالة ' + name);
+      chip.append(b);
+      box.append(chip);
+    });
+  }
+
+  function renderModelInputs() {
+    const box = $('fcModels');
+    const keep = {};
+    box.querySelectorAll('input[data-model]').forEach(i => { keep[i.dataset.model] = i.value; });
+    box.replaceChildren();
+    models.forEach((name, idx) => {
+      const wrap = el('div');
+      const lab = el('label', 'mb-1.5 block text-sm font-medium', name);
+      lab.htmlFor = 'fcm' + idx;
+      const inp = el('input', 'field');
+      inp.id = 'fcm' + idx;
+      inp.type = 'text';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.autocomplete = 'off';
+      inp.placeholder = 'مم';
+      inp.dataset.model = name;
+      inp.value = hasOwn(keep, name) ? keep[name] : '';
+      wrap.append(lab, inp);
+      box.append(wrap);
+    });
+    renderModelChips();
+    updateMean();
+  }
+
+  function readFormValues() {
+    const vals = {};
+    let bad = null;
+    $('fcModels').querySelectorAll('input[data-model]').forEach(inp => {
+      const raw = inp.value.trim();
+      if (!raw) return;
+      const v = parseNum(raw);
+      if (!Number.isFinite(v) || v > 2000) { if (!bad) bad = inp; return; }
+      vals[inp.dataset.model] = round2(v);
+    });
+    return { vals, bad };
+  }
+
+  function updateMean() {
+    const v = Object.values(readFormValues().vals);
+    $('fcMean').textContent = v.length ? `${fmt(v.reduce((s, x) => s + x, 0) / v.length)} مم` : '—';
+  }
+
+  function fillForecastForm(date) {
+    const ex = forecasts.find(f => f.date === date);
+    $('fcModels').querySelectorAll('input[data-model]').forEach(inp => {
+      const n = inp.dataset.model;
+      inp.value = (ex && hasOwn(ex.values, n)) ? String(ex.values[n]) : '';
+    });
+    $('fcSubmit').textContent = ex ? 'تحديث التوقع' : 'حفظ التوقع';
+    setFcErr('');
+    updateMean();
+  }
+
+  function initForecastUI() {
+    $('fcDate').value = addDaysISO(1);
+    $('acDate').value = todayISO();
+    renderModelInputs();
+    fillForecastForm($('fcDate').value);
+    updateActualInfo();
+  }
+
+  $('fcModels').addEventListener('input', () => { updateMean(); setFcErr(''); });
+  $('fcDate').addEventListener('change', () => {
+    setErr('fcDate', 'fcDateErr', '');
+    fillForecastForm($('fcDate').value);
+  });
+
+  $('fcForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const date = $('fcDate').value;
+    if (!date) { setErr('fcDate', 'fcDateErr', 'اختر يوم التوقع.'); $('fcDate').focus(); return; }
+    setErr('fcDate', 'fcDateErr', '');
+
+    const { vals, bad } = readFormValues();
+    if (bad) {
+      setFcErr(`قيمة غير صالحة في حقل ${bad.dataset.model}. أدخل رقمًا بالمليمتر، مثل 4.5`);
+      bad.focus();
+      return;
+    }
+
+    const ex = forecasts.find(f => f.date === date);
+    const values = {};
+    // نحتفظ بقيم النماذج التي أُزيلت من القائمة، ونستبدل الباقي بما في النموذج
+    if (ex) Object.keys(ex.values).forEach(k => { if (!models.includes(k)) values[k] = ex.values[k]; });
+    Object.assign(values, vals);
+    if (!Object.keys(values).length) { setFcErr('أدخل قيمة نموذج واحد على الأقل.'); return; }
+
+    if (ex) ex.values = values;
+    else forecasts.push({ id: uid(), date, values, created: Date.now() });
+
+    const ok = saveForecasts();
+    renderForecasts();
+    fillForecastForm(date);
+    toast(!ok ? 'تعذّر الحفظ في هذا المتصفح' : ex ? 'تم تحديث التوقع' : 'تم حفظ التوقع');
+  });
+
+  function addModel() {
+    const inp = $('newModel');
+    const name = cleanModelName(inp.value);
+    if (!name) { toast('اكتب اسم النموذج أولًا'); return; }
+    if (models.some(m => m.toLowerCase() === name.toLowerCase())) { toast('هذا النموذج موجود في القائمة'); return; }
+    models.push(name);
+    saveModels();
+    inp.value = '';
+    renderModelInputs();
+    fillForecastForm($('fcDate').value);
+    toast(`تمت إضافة ${name}`);
+  }
+  $('addModel').addEventListener('click', addModel);
+  $('newModel').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+
+  $('modelList').addEventListener('click', e => {
+    const b = e.target.closest('button[data-remove]');
+    if (!b || b.disabled) return;
+    const name = b.dataset.remove;
+    models = models.filter(m => m !== name);
+    saveModels();
+    renderModelInputs();
+    toast(`أُزيل ${name} من القائمة. توقعاته السابقة محفوظة.`);
+  });
+
+  /* ---------- العرض ---------- */
+  const EDIT = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+  function signed(n) { return n > 0 ? '+' + fmt(n) : n < 0 ? '−' + fmt(Math.abs(n)) : '0'; }
+
+  function periodOptions() {
+    const opts = [['all', 'كل الفترة']];
+    const years = new Set(), months = new Set();
+    forecasts.forEach(f => { years.add(f.date.slice(0, 4)); months.add(f.date.slice(0, 7)); });
+    [...months].sort().reverse().forEach(m => opts.push([m, `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`]));
+    [...years].sort().reverse().forEach(y => opts.push([y, `سنة ${y}`]));
+    return opts;
+  }
+
+  function renderRanking() {
+    const overall = modelStats('all');
+    $('rankSection').classList.toggle('hidden', overall.evaluated === 0);
+    if (!overall.evaluated) return;
+
+    const sel = $('rankPeriod');
+    const prev = sel.value || 'all';
+    const opts = periodOptions();
+    sel.replaceChildren();
+    opts.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; sel.append(o); });
+    sel.value = opts.some(o => o[0] === prev) ? prev : 'all';
+
+    const { rows, evaluated } = modelStats(sel.value);
+    const ol = $('rankList');
+    const verdict = $('rankVerdict');
+    ol.replaceChildren();
+    verdict.classList.add('hidden');
+
+    if (!evaluated) { $('rankNote').textContent = 'لا توجد أيام مقيَّمة في هذه الفترة بعد.'; return; }
+
+    const anyRain = rows.some(r => r.accQ !== null);
+    $('rankNote').textContent =
+      `بناءً على ${dayN(evaluated)} سُجّل لها المقاس الفعلي.` +
+      (evaluated < 5 ? ' النتائج أولية، وتزداد دقتها مع المزيد من الأيام.' : '') +
+      (anyRain ? '' : ' لم يُسجَّل مطر في هذه الفترة، لذلك تُحسب دقة الرصد فقط.');
+
+    const models = rows.filter(r => !r.isMean);
+    if (models.length) {
+      const best = models[0];
+      let t = `الأدق في هذه الفترة: ${best.name}` + (best.accQ !== null ? ` بدقة كمية ${best.accQ}%` : '') + ` ودقة رصد ${best.accR}%.`;
+      const meanRow = rows.find(r => r.isMean);
+      if (meanRow && rows.indexOf(meanRow) < rows.indexOf(best)) t += ' ومتوسط النماذج تفوّق على أي نموذج منفرد.';
+      verdict.textContent = t;
+      verdict.classList.remove('hidden');
+    }
+
+    rows.forEach((r, i) => {
+      const li = el('li', 'px-4 py-3' + (r.isMean ? ' bg-field' : ''));
+      const top = el('div', 'flex items-center gap-3');
+      top.append(el('span', 'w-6 shrink-0 text-center font-semibold tabular-nums text-muted', String(i + 1)));
+      const nameWrap = el('div', 'flex min-w-0 flex-1 flex-wrap items-center gap-2');
+      nameWrap.append(el('span', 'font-medium break-words', r.isMean ? MEAN_LABEL : r.name));
+      if (i === 0 && rows.length > 1) nameWrap.append(el('span', 'badge', 'الأدق'));
+      top.append(nameWrap);
+      const big = el('div', 'shrink-0 text-center');
+      big.append(el('div', 'text-lg font-bold leading-tight tabular-nums', r.accQ === null ? '—' : r.accQ + '%'), el('div', 'text-xs text-muted', 'دقة الكمية'));
+      top.append(big);
+      li.append(top);
+
+      const track = el('div', 'mt-2 h-1.5 overflow-hidden rounded-full bg-line');
+      const fill = el('div', 'h-full rounded-full bg-accent');
+      fill.style.width = (r.accQ === null ? 0 : r.accQ) + '%';
+      track.append(fill);
+      li.append(track);
+
+      const bits = [`دقة الرصد ${r.accR}%`, `متوسط الخطأ ${fmt(r.mae)} مم`];
+      bits.push(r.isMean ? `على ${dayN(r.n)}` : `الأقرب في ${r.wins} من ${dayN(r.n)}`);
+      li.append(el('p', 'mt-1.5 text-xs text-muted', bits.join('، ')));
+      ol.append(li);
+    });
+  }
+
+  $('rankPeriod').addEventListener('change', renderRanking);
+
+  function valueCell(value, diff, pct, win) {
+    const td = el('td', 'px-3 py-2.5 align-top whitespace-nowrap' + (win ? ' bg-field' : ''));
+    if (value === null) { td.append(el('span', 'text-muted', '—')); return td; }
+    const top = el('div', 'font-semibold tabular-nums');
+    if (win) top.append(el('span', 'me-1 text-accent', '✓'));
+    top.append(fmt(value));
+    td.append(top);
+    if (diff !== null) {
+      const d = el('div', 'text-xs text-muted tabular-nums', signed(diff) + (pct !== null ? ` (${pct}%)` : ''));
+      d.dir = 'ltr';
+      d.style.textAlign = 'right';
+      td.append(d);
+    }
+    return td;
+  }
+
+  function iconBtn(svg, action, id, label, hover) {
+    const b = el('button', 'inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted ' + hover);
+    b.type = 'button';
+    b.dataset.action = action;
+    b.dataset.id = id;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = svg;
+    return b;
+  }
+
+  function renderForecasts() {
+    renderRanking();
+    updateActualInfo();
+
+    const sorted = [...forecasts].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+    $('fcCount').textContent = sorted.length ? fcWord(sorted.length) : '';
+    $('fcEmpty').classList.toggle('hidden', sorted.length > 0);
+    $('arScroll').classList.toggle('hidden', sorted.length === 0);
+
+    const head = $('arHead'), body = $('arBody');
+    head.replaceChildren();
+    body.replaceChildren();
+    if (!sorted.length) return;
+
+    const used = new Set();
+    forecasts.forEach(f => Object.keys(f.values).forEach(n => used.add(n)));
+    const cols = orderNames([...used]);
+
+    const th = (t, cls) => el('th', 'px-3 py-2.5 text-right text-xs font-medium whitespace-nowrap text-muted ' + (cls || ''), t);
+    const hr = el('tr');
+    hr.append(th('التاريخ', 'sticky-col'), ...cols.map(n => th(n)), th(MEAN_LABEL), th('المقاس'), th('الأقرب'));
+    const thA = el('th', 'px-2 py-2.5');
+    thA.append(el('span', 'sr-only', 'إجراءات'));
+    hr.append(thA);
+    head.append(hr);
+
+    const today = todayISO();
+    sorted.forEach(f => {
+      const ev = evaluate(f);
+      const done = ev.actual !== null;
+      const multi = ev.entries.length > 1;
+      const row = el('tr');
+
+      const p = parts(f.date);
+      const td0 = el('td', 'sticky-col px-3 py-2.5 align-top whitespace-nowrap');
+      td0.append(el('div', 'font-medium', `${p.d} ${MONTHS[p.m - 1]}`), el('div', 'text-xs text-muted', `${DAYS[p.dow]} ${p.y}`));
+      row.append(td0);
+
+      cols.forEach(n => {
+        if (!hasOwn(f.values, n)) { row.append(valueCell(null)); return; }
+        const win = done && multi && !ev.tie && ev.winners.includes(n);
+        row.append(valueCell(f.values[n], done ? ev.diffs[n] : null, done ? ev.pcts[n] : null, win));
+      });
+
+      row.append(multi ? valueCell(ev.mean, done ? ev.meanDiff : null, done ? ev.meanPct : null, false) : valueCell(null));
+
+      const tdA = el('td', 'px-3 py-2.5 align-top whitespace-nowrap');
+      if (done) tdA.append(el('div', 'font-semibold tabular-nums', fmt(ev.actual)));
+      else if (f.date <= today) {
+        const b = el('button', 'chip', 'أدخل');
+        b.type = 'button';
+        b.dataset.action = 'actual';
+        b.dataset.id = f.id;
+        tdA.append(b);
+      } else tdA.append(el('span', 'text-xs text-muted', 'بانتظار'));
+      row.append(tdA);
+
+      const tdW = el('td', 'px-3 py-2.5 align-top');
+      if (done && multi) {
+        if (ev.tie) tdW.append(el('span', 'text-sm text-muted', 'تساوٍ'));
+        else {
+          const w = el('div', 'flex flex-wrap gap-1');
+          ev.winners.forEach(n => w.append(el('span', 'badge', n)));
+          tdW.append(w);
+        }
+      } else tdW.append(el('span', 'text-muted', '—'));
+      row.append(tdW);
+
+      const tdX = el('td', 'px-2 py-1.5 align-top whitespace-nowrap');
+      tdX.append(
+        iconBtn(EDIT, 'edit', f.id, 'تعديل توقع ' + fmtDate(f.date), 'hover:text-ink'),
+        iconBtn(TRASH, 'del', f.id, 'حذف توقع ' + fmtDate(f.date), 'hover:text-danger')
+      );
+      row.append(tdX);
+
+      body.append(row);
+    });
+  }
+
+  function scrollToEl(node) {
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  $('arBody').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-action]');
+    if (!b) return;
+    const f = forecasts.find(x => x.id === b.dataset.id);
+    if (!f) return;
+    const act = b.dataset.action;
+
+    if (act === 'edit') {
+      $('fcDate').value = f.date;
+      fillForecastForm(f.date);
+      scrollToEl($('fcForm'));
+    } else if (act === 'actual') {
+      $('acDate').value = f.date;
+      updateActualInfo();
+      scrollToEl($('acForm'));
+      $('acMm').focus({ preventScroll: true });
+    } else if (act === 'del') {
+      const yes = await ask({
+        title: 'حذف هذا التوقع؟',
+        message: `توقع ${fmtDate(f.date)} سيُحذف ولن يدخل في ترتيب النماذج. سجلات الأمطار لا تتأثر.`,
+        actions: [
+          { label: 'حذف التوقع', value: true, kind: 'btn-danger' },
+          { label: 'إلغاء', value: false, kind: 'btn-ghost', focus: true }
+        ]
+      });
+      if (!yes) return;
+      forecasts = forecasts.filter(x => x.id !== f.id);
+      saveForecasts();
+      renderForecasts();
+      fillForecastForm($('fcDate').value);
+      toast('تم حذف التوقع');
+    }
+  });
+
+  /* ---------- تسجيل المقاس الفعلي ---------- */
+  function updateActualInfo() {
+    const date = $('acDate').value;
+    const p = $('acInfo');
+    if (!date) { p.textContent = ''; return; }
+    const act = actualFor(date);
+    const hasFc = forecasts.some(f => f.date === date);
+    p.textContent =
+      (act === null
+        ? 'لا يوجد قياس مسجل لهذا اليوم.'
+        : `المسجّل حاليًا لهذا اليوم: ${fmt(act)} مم، وسيُضاف إليه ما تدخله الآن. لتصحيح قياس احذفه من جدول السجلات في تبويب الأمطار.`) +
+      ' ' + (hasFc ? 'يوجد توقع لهذا اليوم وسيدخل في المقارنة.' : 'لا يوجد توقع لهذا اليوم.');
+  }
+
+  function saveActual(zero) {
+    const date = $('acDate').value;
+    if (!date) { setErr('acDate', 'acDateErr', 'اختر تاريخ القياس.'); $('acDate').focus(); return; }
+    setErr('acDate', 'acDateErr', '');
+
+    let mm = 0;
+    if (!zero) {
+      mm = parseNum($('acMm').value);
+      if (!Number.isFinite(mm) || mm > 2000) {
+        setErr('acMm', 'acErr', 'أدخل كمية صحيحة بالمليمتر، مثل 4.5');
+        $('acMm').focus();
+        return;
+      }
+    }
+    setErr('acMm', 'acErr', '');
+
+    records.push({ id: uid(), date, mm: round2(mm), note: zero ? 'لم تمطر' : '', created: Date.now() });
+    year = +date.slice(0, 4);
+    const ok = save();
+    $('acMm').value = '';
+    renderAll();
+    toast(!ok ? 'تعذّر الحفظ في هذا المتصفح' : zero ? 'تم تسجيل 0 مم لهذا اليوم' : 'تم حفظ المقاس الفعلي');
+  }
+
+  $('acForm').addEventListener('submit', e => { e.preventDefault(); saveActual(false); });
+  $('acZero').addEventListener('click', () => saveActual(true));
+  $('acDate').addEventListener('change', () => { setErr('acDate', 'acDateErr', ''); updateActualInfo(); });
+  $('acMm').addEventListener('input', () => setErr('acMm', 'acErr', ''));
+
+  // أزرار اختصار التاريخ (اليوم / غدًا / أمس ...)
+  document.querySelectorAll('button[data-target]').forEach(b => {
+    b.addEventListener('click', () => {
+      const t = $(b.dataset.target);
+      t.value = addDaysISO(+b.dataset.offset);
+      t.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
+
+  /* ---------- التبويبات ---------- */
+  const VIEWS = { rain: 'viewRain', forecast: 'viewForecast', report: 'viewReport' };
+  let currentTab = 'rain';
+  function setTab(t) {
+    currentTab = t;
+    Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle('hidden', k !== t));
+    document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+    if (t === 'rain' && chart) chart.resize();
+    if (t === 'report' && !fbDirty) fbRegenerate();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+  /* =====================================================
+     تقرير فيسبوك: نص منسق بالرموز التعبيرية جاهز للنسخ
+     ===================================================== */
+  const KEY_PLACE = 'rain-log-place';
+  const KEY_LANG = 'rain-log-fb-lang';
+  const FR_MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  let fbLang = 'ar';
+  let fbDirty = false;
+
+  function rainEmoji(v) { return v <= 0 ? '☀️' : v < 2 ? '🌦️' : v < 10 ? '🌧️' : '⛈️'; }
+
+  function buildReport(per, lang, opts) {
+    const fr = lang === 'fr';
+    const t = (a, f) => (fr ? f : a);
+    const pl = (n, w) => (n > 1 ? w + 's' : w);
+    const ML = fr ? FR_MONTHS : MONTHS;
+    const num = v => { const s = fmt(v); return fr ? s.replace('.', ',') : s; };
+    const mm = v => `${num(v)} ${t('مم', 'mm')}`;
+    const dl = iso => { const p = parts(iso); return `${p.d} ${ML[p.m - 1]}`; };
+
+    const today = todayISO();
+    const from7 = addDaysISO(-6);
+    const inP = d => (per === 'last7' ? (d >= from7 && d <= today) : d.startsWith(per));
+
+    const recs = records.filter(r => inP(r.date));
+    if (!recs.length) return '';
+
+    const byDay = new Map();
+    recs.forEach(r => byDay.set(r.date, round2((byDay.get(r.date) || 0) + r.mm)));
+    const dates = [...byDay.keys()].sort();
+    const total = round2(dates.reduce((s, d) => s + byDay.get(d), 0));
+    const rainy = dates.filter(d => byDay.get(d) > 0);
+    let maxD = null;
+    rainy.forEach(d => { if (maxD === null || byDay.get(d) > byDay.get(maxD)) maxD = d; });
+
+    const SEP = '━━━━━━━━━━━━━━';
+    const isYear = /^\d{4}$/.test(per);
+    const plabel = per === 'last7' ? t('آخر 7 أيام', '7 derniers jours')
+      : isYear ? t(`سنة ${per}`, `Année ${per}`)
+      : `${ML[+per.slice(5, 7) - 1]} ${per.slice(0, 4)}`;
+
+    const L = [];
+    L.push(t(`🌧️ حصيلة الأمطار | ${plabel}`, `🌧️ Bilan pluviométrique | ${plabel}`));
+    if (opts.place) L.push(t(`📍 المنطقة: ${opts.place}`, `📍 Zone : ${opts.place}`));
+    L.push(SEP, '');
+
+    L.push(t('📊 الملخص', '📊 Résumé'));
+    L.push(t(`💧 إجمالي الأمطار: ${mm(total)}`, `💧 Cumul total : ${mm(total)}`));
+    L.push(t(`🗓️ الأيام الماطرة: ${rainy.length}`, `🗓️ Jours de pluie : ${rainy.length}`));
+    L.push(t(`📅 الأيام المسجلة: ${dates.length}`, `📅 Jours enregistrés : ${dates.length}`));
+    if (maxD) L.push(t(`⛈️ أغزر يوم: ${dl(maxD)} (${mm(byDay.get(maxD))})`, `⛈️ Jour le plus arrosé : ${dl(maxD)} (${mm(byDay.get(maxD))})`));
+    if (rainy.length > 1) L.push(t(`📈 المتوسط في اليوم الماطر: ${mm(total / rainy.length)}`, `📈 Moyenne par jour de pluie : ${mm(total / rainy.length)}`));
+
+    if (opts.details) {
+      L.push('', SEP, '');
+      if (isYear) {
+        L.push(t('📅 الحصيلة الشهرية', '📅 Cumul par mois'));
+        const mt = Array(12).fill(0);
+        const md = Array.from({ length: 12 }, () => new Set());
+        const hasM = new Set();
+        dates.forEach(d => {
+          const m = +d.slice(5, 7) - 1;
+          mt[m] += byDay.get(d);
+          hasM.add(m);
+          if (byDay.get(d) > 0) md[m].add(d);
+        });
+        [...hasM].sort((a, b) => a - b).forEach(i => {
+          const n = md[i].size;
+          L.push(`🌧️ ${ML[i]}: ${mm(round2(mt[i]))} (${t(dayWord(n), `${n} ${pl(n, 'jour')} de pluie`)})`);
+        });
+      } else {
+        L.push(t('📅 التفاصيل اليومية', '📅 Détail par jour'));
+        dates.forEach(d => L.push(`${rainEmoji(byDay.get(d))} ${dl(d)}: ${mm(byDay.get(d))}`));
+      }
+    }
+
+    if (opts.models) {
+      const st = modelStats(inP);
+      if (st.evaluated > 0) {
+        L.push('', SEP, '');
+        L.push(t(`🏆 مقارنة النماذج العددية بالواقع (${dayN(st.evaluated)})`,
+                 `🏆 Modèles numériques vs réalité (${st.evaluated} ${pl(st.evaluated, 'jour')})`));
+        const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+        st.rows.forEach((r, i) => {
+          const name = r.isMean ? t('متوسط النماذج', 'Moyenne des modèles') : r.name;
+          const accQ = r.accQ === null ? '—' : r.accQ + '%';
+          L.push(`${medals[i] || (i + 1) + '.'} ${name} — ${t('دقة الكمية', 'précision')} ${accQ}`);
+          L.push(`↳ ${t('دقة الرصد', 'pluie/sec')} ${r.accR}% | ${t('متوسط الخطأ', 'erreur moy.')} ${mm(r.mae)}`);
+        });
+        const best = st.rows.find(r => !r.isMean);
+        if (best) L.push('', t(`🏅 النموذج الأقرب للواقع: ${best.name}`, `🏅 Modèle le plus proche de la réalité : ${best.name}`));
+
+        const evs = forecasts
+          .filter(f => inP(f.date))
+          .map(f => ({ f, ev: evaluate(f) }))
+          .filter(x => x.ev.actual !== null && x.ev.entries.length > 1)
+          .sort((a, b) => a.f.date.localeCompare(b.f.date))
+          .slice(-8);
+        if (evs.length) {
+          L.push('', t('🔎 آخر المقارنات', '🔎 Dernières comparaisons'));
+          evs.forEach(({ f, ev }) => {
+            const tail = ev.tie ? t('النماذج متساوية', 'modèles à égalité') : `${t('الأقرب', 'Proche')}: ${ev.winners.join(' + ')}`;
+            L.push(`• ${dl(f.date)}: ${t('الفعلي', 'Réel')} ${mm(ev.actual)} | ${t('المتوسط', 'Moy.')} ${mm(ev.mean)} | ${tail}`);
+          });
+        }
+        L.push('', t('📝 القياس من مقياس مطر محلي، والتوقعات أُدخلت يدويًا من النماذج المذكورة.',
+                      '📝 Mesures au pluviomètre local; prévisions saisies manuellement.'));
+      }
+    }
+    return L.join('\n');
+  }
+
+  function fbBuildPeriods() {
+    const sel = $('fbPeriod');
+    const prev = sel.value;
+    const months = new Set(), years = new Set();
+    records.forEach(r => { months.add(r.date.slice(0, 7)); years.add(r.date.slice(0, 4)); });
+    const opts = [['last7', 'آخر 7 أيام']];
+    [...months].sort().reverse().forEach(m => opts.push([m, `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`]));
+    [...years].sort().reverse().forEach(y => opts.push([y, `سنة ${y}`]));
+    sel.replaceChildren();
+    opts.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; sel.append(o); });
+    if (prev && opts.some(o => o[0] === prev)) sel.value = prev;
+    else {
+      const cur = todayISO().slice(0, 7);
+      sel.value = months.has(cur) ? cur : (opts[1] ? opts[1][0] : 'last7');
+    }
+  }
+
+  function fbRegenerate() {
+    const text = buildReport($('fbPeriod').value, fbLang, {
+      details: $('fbDetails').checked,
+      models: $('fbModels').checked,
+      place: $('fbPlace').value.trim()
+    });
+    const ta = $('fbText');
+    ta.value = text;
+    ta.dir = fbLang === 'fr' ? 'ltr' : 'rtl';
+    fbDirty = false;
+    const empty = !text;
+    $('fbEmpty').classList.toggle('hidden', !empty);
+    $('fbCopy').disabled = empty;
+    $('fbShare').disabled = empty;
+  }
+
+  async function fbCopy() {
+    const ta = $('fbText');
+    const text = ta.value;
+    if (!text.trim()) return;
+    let ok = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; }
+    } catch (e) {}
+    if (!ok) {
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      try { ok = document.execCommand('copy'); } catch (e) {}
+    }
+    if (ok) ta.blur();
+    toast(ok ? 'تم نسخ التقرير. الصقه الآن في فيسبوك 📋' : 'تعذّر النسخ تلقائيًا. حدّد النص وانسخه يدويًا.');
+  }
+
+  $('fbCopy').addEventListener('click', fbCopy);
+  $('fbShare').addEventListener('click', async () => {
+    const text = $('fbText').value;
+    if (!text.trim() || !navigator.share) return;
+    try { await navigator.share({ text }); } catch (e) { /* أغلق المستخدم نافذة المشاركة */ }
+  });
+  $('fbReset').addEventListener('click', () => { fbRegenerate(); toast('تمت إعادة كتابة النص'); });
+  $('fbText').addEventListener('input', () => { fbDirty = true; });
+  ['fbPeriod', 'fbDetails', 'fbModels'].forEach(id => $(id).addEventListener('change', fbRegenerate));
+  $('fbPlace').addEventListener('input', () => { writeStore(KEY_PLACE, $('fbPlace').value); fbRegenerate(); });
+
+  document.querySelectorAll('[data-lang]').forEach(b => {
+    b.addEventListener('click', () => {
+      fbLang = b.dataset.lang;
+      writeStore(KEY_LANG, fbLang);
+      document.querySelectorAll('[data-lang]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.lang === fbLang)));
+      fbRegenerate();
+    });
+  });
+
+  $('fbShortcut').addEventListener('click', () => {
+    const cur = todayISO().slice(0, 7);
+    const sel = $('fbPeriod');
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    fbRegenerate();
+    setTab('report');
+  });
+
+  function initReport() {
+    const savedLang = readStore(KEY_LANG);
+    if (savedLang === 'fr' || savedLang === 'ar') fbLang = savedLang;
+    document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === fbLang)));
+    $('fbPlace').value = readStore(KEY_PLACE) || '';
+    if (!navigator.share) $('fbShare').classList.add('hidden');
+    fbBuildPeriods();
+    fbRegenerate();
+  }
+
+  /* =====================================================
+     زر التثبيت (PWA)
+     ===================================================== */
+  let installEvt = null;
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function showInstall(show) {
+    const bar = $('installBar');
+    bar.classList.toggle('hidden', !show);
+    bar.classList.toggle('flex', show);
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installEvt = e;
+    if (!isStandalone() && readStore('rain-log-install-dismissed') !== '1') {
+      $('installBtn').classList.remove('hidden');
+      showInstall(true);
+    }
+  });
+  window.addEventListener('appinstalled', () => { installEvt = null; showInstall(false); toast('تم تثبيت التطبيق'); });
+
+  $('installBtn').addEventListener('click', async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (e) {}
+    installEvt = null;
+    showInstall(false);
+  });
+  $('installClose').addEventListener('click', () => { writeStore('rain-log-install-dismissed', '1'); showInstall(false); });
+
+  if (isIOS() && !isStandalone() && readStore('rain-log-install-dismissed') !== '1') {
+    $('installText').textContent = 'لتثبيت التطبيق على iPhone: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية».';
+    $('installBtn').classList.add('hidden');
+    showInstall(true);
+  }
+
+  /* ---------- تشغيل ---------- */
+  function setDefaultDate() {
+    autoDate = todayISO();
+    $('date').value = autoDate;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    // لو فُتح التطبيق في يوم جديد ولم يغيّر المستخدم التاريخ، نحدّثه
+    if ($('date').value === autoDate && autoDate !== todayISO()) setDefaultDate();
+    renderHero();
+    renderForecasts();
+  });
+
+  const dark = window.matchMedia('(prefers-color-scheme: dark)');
+  if (dark.addEventListener) dark.addEventListener('change', renderMonthly);
+
+  if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+    });
+  }
+
+  load();
+  setDefaultDate();
+  initForecastUI();
+  renderAll();
+  initReport();
+})();
+</script>
+</body>
+</html>
